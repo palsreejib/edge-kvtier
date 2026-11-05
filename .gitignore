@@ -1,3 +1,4 @@
 *.exe
 *.gguf
 **/__pycache__/
+.venv/
