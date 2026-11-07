@@ -23,6 +23,13 @@ RESULTS_DIR = REPO_ROOT / "results"
 PLATFORMS = ("cpu", "igpu", "4060")   # substrings that appear in your CSV file names
 DEDUPE_COLS = ["type_k", "type_v", "n_depth", "n_gen", "n_prompt", "n_threads"]
 
+# decimal places per column in the written error table
+CSV_DECIMALS = {
+    "measured_tok_s": 3, "predicted_tok_s": 3,
+    "signed_error": 4, "signed_error_pct": 4, "abs_error": 4,
+    "BW_kv_GBps": 3, "BW_w_eff_GBps": 3,
+}
+
 # key columns: model_type, model_size, model_n_params, n_threads, type_k, type_v, n_prompt, n_gen, n_depth,
 #              devices, avg_ns, avg_ts, stddev_ts
 
@@ -114,7 +121,7 @@ def build_decode_error_table(csv_paths: list[str],
 
     result = pd.concat(tables, ignore_index=True)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    result.to_csv(RESULTS_DIR / out_name, index=False)
+    result.round(CSV_DECIMALS).to_csv(RESULTS_DIR / out_name, index=False)
     return result
 
 
