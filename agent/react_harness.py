@@ -109,7 +109,7 @@ def parse_action(text):
 # 4. The loop. tool_gap_ms on row k = time from step k's response arriving to
 #    step k+1's request being sent (tool execution + prompt building).
 # ---------------------------------------------------------------------------
-def run_task(task, platform, backend, log):
+def run_task(task, platform, backend, log, kv_type):
     prompt = start_prompt(task["text"])
     rows = []
     for step in range(1, MAX_STEPS + 1):
@@ -128,6 +128,7 @@ def run_task(task, platform, backend, log):
             "out_tokens": tm["predicted_n"],
             "prefill_ms": round(tm["prompt_ms"], 2),
             "decode_ms": round(tm["predicted_ms"], 2),
+            "kv_type": kv_type,
         }
 
         text = resp["content"]
@@ -164,7 +165,7 @@ def check(answer, expected):
     # TODO: loose match (numbers within tolerance, or substring)
     return answer is not None and expected.lower() in answer.lower()
 
-FIELDS = ["task_id", "step", "platform", "backend", "ctx_tokens", "cached_tokens", "new_tokens",
+FIELDS = ["task_id", "step", "platform", "backend", "kv_type", "ctx_tokens", "cached_tokens", "new_tokens",
           "out_tokens", "prefill_ms", "decode_ms", "tool_name", "tool_gap_ms", "success"]
 
 if __name__ == "__main__":
@@ -172,6 +173,7 @@ if __name__ == "__main__":
     ap.add_argument("--platform", required=True)   # cpu | igpu | rtx4060
     ap.add_argument("--backend", required=True)    # cpu | vulkan
     ap.add_argument("--out", required=True)
+    ap.add_argument("--kv-type", default="q4_0")
     a = ap.parse_args()
 
     with open(a.out, "w", newline="") as f, open(a.out + ".jsonl", "w") as log:
@@ -181,7 +183,7 @@ if __name__ == "__main__":
             # Clear the slot so task N doesn't reuse task N-1's KV beyond the shared system prompt.
             # TODO: decide; simplest is to restart nothing and accept the system-prompt reuse
             # (that's realistic). Note the choice in the run log.
-            rows, answer = run_task(task, a.platform, a.backend, log)
+            rows, answer = run_task(task, a.platform, a.backend, a.kv_type, log)
             ok = int(check(answer, task["answer"]))
             for r in rows:
                 r["success"] = ok          # task-level outcome, repeated on every row
