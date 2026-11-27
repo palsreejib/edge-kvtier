@@ -19,7 +19,7 @@ SERVER = "http://127.0.0.1:8080" # got from the llama.cpp server; documentation
 MAX_STEPS = 16          # hard cap so a confused 3B model can't loop forever
 N_PREDICT = 256         # cap on tokens per step
 
-pages = {"page_title": "",
+share = {"page_title": "",
         "page_text": "",
         "last_keyword": "",
         "position": 0} # common dict for search and lookup to share found page info
@@ -61,9 +61,18 @@ def search(arg):
         r = requests.get(url=url, headers=headers, params = params, timeout=5)
         r.raise_for_status()
         results = r.json()["query"]["search"]
+        return results
 
     else:
         text = page["extract"]
+        share["page_title"] = page["title"]
+        share["page_text"] = text
+        share["last_keyword"] = ""
+        share["position"] = 0
+        split = re.split(r"(?<=[.!?])\s+", text)
+        for i in range(3):
+            results = results+split[i] 
+        return results
 
 def lookup(arg):       # medium, large output: this is what makes the context grow
     # TODO: return file contents, truncated to ~1,500 tokens (~6,000 chars)
