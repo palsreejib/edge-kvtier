@@ -2,3 +2,6 @@
 *.gguf
 **/__pycache__/
 .venv/
+
+llama-b11889-bin-*/
+traces/raw/*.jsonl
