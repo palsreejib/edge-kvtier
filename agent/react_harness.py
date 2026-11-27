@@ -15,9 +15,14 @@ Plus a raw JSONL log of every request/response, so nothing is lost if the schema
 import argparse, csv, json, re, time
 import requests
 
-SERVER = "http://127.0.0.1:8080"
-MAX_STEPS = 15          # hard cap so a confused 3B model can't loop forever
+SERVER = "http://127.0.0.1:8080" # got from the llama.cpp server; documentation
+MAX_STEPS = 16          # hard cap so a confused 3B model can't loop forever
 N_PREDICT = 256         # cap on tokens per step
+
+pages = {"page_title": "",
+        "page_text": "",
+        "last_keyword": "",
+        "position": 0} # common dict for search and lookup to share found page info
 
 # ---------------------------------------------------------------------------
 # 1. Tools. Each takes a string argument and returns a string observation.
@@ -25,27 +30,54 @@ N_PREDICT = 256         # cap on tokens per step
 #    gap lengths per tool. Keep outputs a few hundred to ~1,500 tokens so the
 #    context grows toward ~8k by step 10 (the proposal's 3,000 -> 7,800 loop).
 # ---------------------------------------------------------------------------
-def tool_calc(arg):            # fast (~ms)
-    # TODO: safe arithmetic eval (e.g. ast-based), return the number as a string
-    raise NotImplementedError
+# def tool_calc(arg):            # fast (~ms)
+#     # TODO: safe arithmetic eval (e.g. ast-based), return the number as a string
+#     raise NotImplementedError
 
-def tool_search_docs(arg):     # medium: keyword/BM25 search over a local folder of text files
-    # TODO: return top-3 snippets with file names
-    raise NotImplementedError
+def search(arg):     
+    url = 'https://en.wikipedia.org/w/api.php'
+    headers = {"User-Agent":  "Friday/1.1 (https://starkindustries.com)"} # Change to a real address when it works! - follow MediaWiki
+    params = {"action": "query",
+              "format": "json",
+              "formatversion": 2,
+              "explaintext": 1,
+              "redirects": 1,
+              "prop": "extracts",
+              "titles": arg,
+              }
+    r = requests.get(url=url, headers=headers, params=params, timeout=5)
+    r.raise_for_status()
 
-def tool_read_file(arg):       # medium, large output: this is what makes the context grow
+    inter = r.json()
+    page = inter["query"]["pages"][0]
+
+    if page.get("missing") or page.get("invalid"):
+        params = {"action": "query",
+                    "list": "search",
+                    "srlimit": 5, #Default=10
+                    "srsearch": arg,
+                    "format": "json",
+                    "formatversion": 2}
+        r = requests.get(url=url, headers=headers, params = params, timeout=5)
+        r.raise_for_status()
+        results = r.json()["query"]["search"]
+
+    else:
+        text = page["extract"]
+
+def lookup(arg):       # medium, large output: this is what makes the context grow
     # TODO: return file contents, truncated to ~1,500 tokens (~6,000 chars)
     raise NotImplementedError
 
-def tool_run_python(arg):      # slow and variable: subprocess with a timeout (e.g. run pytest)
-    # TODO: subprocess.run([...], capture_output=True, timeout=60); return stdout/stderr tail
-    raise NotImplementedError
+# def tool_run_python(arg):      # slow and variable: subprocess with a timeout (e.g. run pytest)
+#     # TODO: subprocess.run([...], capture_output=True, timeout=60); return stdout/stderr tail
+#     raise NotImplementedError
 
 TOOLS = {
-    "calc": tool_calc,
-    "search_docs": tool_search_docs,
-    "read_file": tool_read_file,
-    "run_python": tool_run_python,
+    # "calc": tool_calc,
+    "search_docs": search,
+    "read_file": lookup,
+    # "run_python": tool_run_python,
 }
 
 # ---------------------------------------------------------------------------
@@ -65,10 +97,8 @@ Thought: I know the answer.
 Final Answer: <answer>
 
 Tools:
-- calc: evaluates an arithmetic expression
-- search_docs: searches local documents, returns snippets
-- read_file: returns the contents of a file
-- run_python: runs a python script and returns its output
+- search: searches local documents, returns snippets
+- lookup: returns the contents of a file
 
 TODO: add 1-2 full worked examples here. A 3B model needs them to follow the format.
 <|eot_id|>"""
@@ -82,7 +112,7 @@ def start_prompt(task_text):
 # 3. One LLM step against llama-server's native /completion endpoint.
 # ---------------------------------------------------------------------------
 def llm_step(prompt):
-    body = {
+    body = { # body depends entirely on the llama.cpp server; check documentation for why this format
         "prompt": prompt,
         "n_predict": N_PREDICT,
         "temperature": 0.0,          # deterministic: same tokens on every platform
